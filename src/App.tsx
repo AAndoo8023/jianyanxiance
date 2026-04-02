@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   generateFollowUpSuggestions,
   generateReport,
@@ -30,7 +30,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   computeThinkingPhaseFromBuffer,
   countChineseChars,
-  countFinalDraftChars,
   mergeFinalDraftTitleBody,
   parseReport,
   ParsedReport,
@@ -66,6 +65,50 @@ const THINKING_STEPS = [
   },
 ] as const;
 
+/** 将 `**短语**` 渲染为加粗（用于后续建议阅读视图） */
+function renderSimpleBold(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={i} className="font-semibold text-sky-950">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
+type AutosizeTextareaProps = Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  'rows'
+> & { minHeightPx?: number };
+
+function AutosizeTextarea({
+  value,
+  minHeightPx = 48,
+  className,
+  ...rest
+}: AutosizeTextareaProps) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, minHeightPx)}px`;
+  }, [value, minHeightPx]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      className={className}
+      {...rest}
+    />
+  );
+}
+
 type ReportState =
   | { kind: 'parsed'; sections: ParsedReport }
   | { kind: 'raw'; text: string };
@@ -83,20 +126,14 @@ export default function App() {
   const [topic, setTopic] = useState('');
   const [reportState, setReportState] = useState<ReportState | null>(null);
   const [copied, setCopied] = useState(false);
+  const [resultGenId, setResultGenId] = useState(0);
+  const [followUpEditing, setFollowUpEditing] = useState(false);
 
   const finalDraftParts = useMemo(() => {
     if (!reportState || reportState.kind !== 'parsed') {
       return { title: null as string | null, body: '' };
     }
     return splitFinalDraftTitleBody(reportState.sections.finalDraft);
-  }, [reportState]);
-
-  const finalDraftChars = useMemo(() => {
-    if (!reportState) return 0;
-    if (reportState.kind === 'parsed') {
-      return countFinalDraftChars(reportState.sections.finalDraft);
-    }
-    return countFinalDraftChars(reportState.text);
   }, [reportState]);
 
   const topicChineseCount = useMemo(() => countChineseChars(topic), [topic]);
@@ -146,6 +183,7 @@ export default function App() {
     if (!parsed.ok) {
       setReportState({ kind: 'raw', text: res || '' });
       setView('result');
+      setResultGenId((n) => n + 1);
       return;
     }
 
@@ -163,7 +201,12 @@ export default function App() {
       sections: { ...parsed.sections, followUp: follow },
     });
     setView('result');
+    setResultGenId((n) => n + 1);
   };
+
+  useEffect(() => {
+    setFollowUpEditing(false);
+  }, [resultGenId]);
 
   const getCopyFinalDraftText = (): string => {
     if (!reportState) return '';
@@ -200,6 +243,9 @@ export default function App() {
 
   const sectionTextareaClass =
     'w-full min-h-[8rem] sm:min-h-[10rem] lg:min-h-[12rem] p-3 sm:p-4 lg:p-5 rounded-xl border border-slate-200 bg-[#fdfbf7] font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/15 resize-y';
+
+  const sectionTextareaAutosizeClass =
+    'w-full p-3 sm:p-4 lg:p-5 border border-slate-200 bg-[#fdfbf7] font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/15 resize-none overflow-hidden';
 
   return (
     <div className="min-h-[100dvh] min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-red-100 selection:text-red-900 flex flex-col overflow-x-hidden">
@@ -538,7 +584,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="w-full flex flex-col flex-1 min-h-0 gap-3 sm:gap-4 lg:gap-6"
+                className="w-full flex flex-col gap-3 sm:gap-4 lg:gap-6"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between shrink-0">
                   <button
@@ -546,6 +592,7 @@ export default function App() {
                     onClick={() => {
                       setView('input');
                       setReportState(null);
+                      setFollowUpEditing(false);
                     }}
                     className="flex items-center justify-center lg:justify-start gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 min-h-11 rounded-xl hover:bg-slate-100 border border-transparent hover:border-slate-200/80 w-full lg:w-auto"
                   >
@@ -553,18 +600,7 @@ export default function App() {
                     返回修改需求
                   </button>
 
-                  <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center gap-2 sm:gap-3 w-full lg:w-auto lg:justify-end">
-                    <div className="flex flex-wrap items-center gap-2 justify-center lg:justify-end">
-                      <div className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        <span className="text-slate-500">最终稿字数（不含空白）</span>
-                        <span className="font-semibold tabular-nums text-red-700">{finalDraftChars}</span>
-                        <span className="text-slate-400 text-xs">字</span>
-                      </div>
-                      <div className="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 bg-white px-3 py-2 rounded-xl border border-slate-200">
-                        <Edit3 size={14} />
-                        <span>终稿与建议可编辑</span>
-                      </div>
-                    </div>
+                  <div className="flex w-full lg:w-auto lg:justify-end">
                     <button
                       type="button"
                       onClick={handleCopy}
@@ -580,26 +616,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <p className="sm:hidden text-xs text-slate-500 text-center -mt-1">复制正文仅含最终定稿，不含后续建议</p>
-
                 {reportState.kind === 'parsed' ? (
-                  <div className="flex flex-1 min-h-0 flex-col gap-5 lg:gap-6">
-                    <section className="overflow-hidden rounded-2xl border border-red-200/90 bg-white shadow-lg shadow-red-100/30 flex flex-col flex-1 min-h-0">
+                  <div className="flex flex-col gap-5 lg:gap-6">
+                    <section className="overflow-hidden rounded-2xl border border-red-200/90 bg-white shadow-lg shadow-red-100/30 flex flex-col">
                       <div className="flex items-center gap-2 border-b border-red-100 bg-gradient-to-r from-red-50 to-white px-4 py-3 sm:px-5">
                         <FileSignature className="size-5 shrink-0 text-red-700" />
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-sm sm:text-base font-bold text-slate-900">最终定稿</h3>
-                          <p className="text-xs text-slate-500 mt-0.5">标题单独一行，与正文区分排版</p>
-                        </div>
-                        <span className="shrink-0 text-xs text-slate-500 tabular-nums">
-                          {countFinalDraftChars(reportState.sections.finalDraft)} 字
-                        </span>
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900">最终定稿</h3>
                       </div>
                       <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-4 sm:px-5">
-                        <label className="text-xs font-medium text-slate-600">标题（居中展示，纯文本勿用 HTML）</label>
-                        <input
-                          type="text"
+                        <label htmlFor="final-draft-title" className="sr-only">
+                          标题
+                        </label>
+                        <AutosizeTextarea
+                          id="final-draft-title"
                           value={finalDraftParts.title ?? ''}
+                          minHeightPx={52}
                           onChange={(e) =>
                             updateParsedSection(
                               'finalDraft',
@@ -610,59 +641,78 @@ export default function App() {
                             )
                           }
                           placeholder="关于××××××的建议"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg sm:text-xl font-bold tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg sm:text-xl font-bold tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 whitespace-normal break-words leading-snug"
+                          spellCheck={false}
                         />
                       </div>
-                      <textarea
+                      <AutosizeTextarea
                         value={finalDraftParts.body}
+                        minHeightPx={128}
                         onChange={(e) =>
                           updateParsedSection(
                             'finalDraft',
                             mergeFinalDraftTitleBody(finalDraftParts.title, e.target.value)
                           )
                         }
-                        className={
-                          sectionTextareaClass +
-                          ' flex-1 min-h-[min(55vh,calc(100dvh-20rem))] sm:min-h-[18rem] lg:min-h-[min(52vh,38rem)] border-0 rounded-none'
-                        }
+                        className={sectionTextareaAutosizeClass + ' border-0 rounded-none'}
                         spellCheck={false}
                         placeholder="报送人抬头与正文（请勿再写标题行）"
                       />
                     </section>
 
                     <section className="overflow-hidden rounded-2xl border border-sky-200/80 bg-gradient-to-b from-sky-50/40 to-white shadow-md shadow-sky-100/30 flex flex-col">
-                      <div className="flex items-center gap-2 border-b border-sky-200/60 bg-sky-100/40 px-4 py-3 sm:px-5">
-                        <Sparkles className="size-5 shrink-0 text-sky-800" />
-                        <h3 className="text-sm sm:text-base font-bold text-sky-950">后续建议</h3>
+                      <div className="flex items-center justify-between gap-2 border-b border-sky-200/60 bg-sky-100/40 px-4 py-3 sm:px-5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Sparkles className="size-5 shrink-0 text-sky-800" />
+                          <h3 className="text-sm sm:text-base font-bold text-sky-950">后续建议</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFollowUpEditing((v) => !v)}
+                          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-sky-300/80 bg-white/90 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-white"
+                        >
+                          <Edit3 size={14} className="shrink-0" />
+                          {followUpEditing ? '完成' : '编辑'}
+                        </button>
                       </div>
-                      <textarea
-                        value={reportState.sections.followUp}
-                        onChange={(e) => updateParsedSection('followUp', e.target.value)}
-                        className={sectionTextareaClass + ' border-0 rounded-none bg-white/70 min-h-[min(24vh,12rem)]'}
-                        spellCheck={false}
-                        placeholder="由第二轮 AI 根据终稿从重要性、立意、调研方向等维度生成；可在此编辑。"
-                      />
+                      {followUpEditing ? (
+                        <AutosizeTextarea
+                          value={reportState.sections.followUp}
+                          minHeightPx={112}
+                          onChange={(e) => updateParsedSection('followUp', e.target.value)}
+                          className={sectionTextareaAutosizeClass + ' border-0 rounded-none bg-white/70'}
+                          spellCheck={false}
+                          placeholder="由第二轮 AI 根据终稿生成；可在此编辑。**视角** 可加粗。"
+                        />
+                      ) : (
+                        <div className="px-4 py-4 sm:px-5 sm:py-5 font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 bg-white/70 min-h-[6rem] whitespace-pre-wrap break-words">
+                          {reportState.sections.followUp.trim() ? (
+                            renderSimpleBold(reportState.sections.followUp)
+                          ) : (
+                            <span className="text-slate-400">
+                              暂无内容；若第二轮生成失败，可点「编辑」自行填写。
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </section>
                   </div>
                 ) : (
-                  <div className="flex flex-col flex-1 min-h-0 gap-2">
+                  <div className="flex flex-col gap-2">
                     <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       未识别到标准分区标记，已以全文展示。您仍可编辑后复制。
                     </p>
-                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col flex-1 min-h-0 shadow-sm">
-                      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 bg-slate-50">
+                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col shadow-sm">
+                      <div className="flex items-center border-b border-slate-100 px-4 py-2 bg-slate-50">
                         <span className="text-sm font-medium text-slate-800">全文</span>
-                        <span className="text-xs text-slate-500 tabular-nums">{finalDraftChars} 字（全文，不含空白）</span>
                       </div>
-                      <textarea
+                      <AutosizeTextarea
                         value={reportState.text}
+                        minHeightPx={160}
                         onChange={(e) =>
                           setReportState({ kind: 'raw', text: e.target.value })
                         }
-                        className={
-                          sectionTextareaClass +
-                          ' flex-1 min-h-[min(60vh,calc(100dvh-14rem))] border-0 rounded-none'
-                        }
+                        className={sectionTextareaAutosizeClass + ' border-0 rounded-none'}
                         spellCheck={false}
                       />
                     </div>

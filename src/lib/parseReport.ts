@@ -96,15 +96,20 @@ export function splitFinalDraftTitleBody(finalDraft: string): { title: string | 
   }
   const lines = raw.split(/\r?\n/);
   const first = lines[0]?.trim() ?? '';
-  if (
+  const looksLikeTitle =
     first.length > 0 &&
     first.length <= 120 &&
-    /^关于.+的(建议|提案)/.test(first) &&
-    lines.length > 1
-  ) {
+    /^关于.+的(建议|提案)/.test(first);
+
+  // 仅一行且像标题：兼容旧版「正文清空后只存标题字符串」的存储形式
+  if (lines.length === 1 && looksLikeTitle) {
+    return { title: first, body: '' };
+  }
+
+  if (looksLikeTitle && lines.length > 1) {
     return {
       title: first,
-      body: lines.slice(1).join('\n').replace(/^\s+/, ''),
+      body: lines.slice(1).join('\n').trim(),
     };
   }
   return { title: null, body: raw };
@@ -114,7 +119,7 @@ export function mergeFinalDraftTitleBody(title: string | null, body: string): st
   const t = (title ?? '').trim();
   const b = body.trim();
   if (!t) return b;
-  if (!b) return t;
+  // 有标题时始终保留「标题 + 空行 + 正文」，便于 split 在正文为空时仍能识别标题行
   return `${t}\n\n${b}`;
 }
 
