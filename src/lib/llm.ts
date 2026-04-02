@@ -1,6 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { MARK_FINAL, MARK_FOLLOW, MARK_REVIEW } from './parseReport';
 
 const SYSTEM_INSTRUCTION = `
 # 社情民意信息撰写内参专家
@@ -46,7 +44,7 @@ const SYSTEM_INSTRUCTION = `
    - **推荐表述格式**：建议由[牵头单位]负责，协同[协同单位]，开展/推动/建立......
 6. **字数与文风**：控制在 1200-1500 字内，语言精炼，杜绝“我觉得”等主观表述。
 
-## 范例结构 (Output Template)
+## 范例结构 (Output Template) — 必须严格按此顺序与标记输出，不得合并为一段
 
 【内部打磨：三轮专家评审意见】
 （展示基于逻辑拆解后的三位专家意见）
@@ -66,6 +64,9 @@ const SYSTEM_INSTRUCTION = `
   三、 针对性建议
 （一）建议由[单位A]牵头，协同[单位B]及相关行业部门，建立......（内容阐述）。
   （二）建议由[单位C]负责，会同[单位D]，推动......（内容阐述）。
+---
+【后续建议】
+（另起板块，给出 3～5 条可操作建议：如报送渠道、补充调研、数据核实、与相关部门沟通要点、可附材料等；每条用简短段落表述，禁止使用圆点列表。）
 `;
 
 export interface UserProfile {
@@ -76,7 +77,50 @@ export interface UserProfile {
   name: string;
 }
 
+function getEnv(name: 'LLM_API_URL' | 'LLM_MODEL' | 'LLM_API_KEY'): string {
+  return (typeof process !== 'undefined' && process.env?.[name]) || '';
+}
+
+function extractAssistantText(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const d = data as Record<string, unknown>;
+  const err = d.error;
+  if (err && typeof err === 'object') {
+    const msg = (err as { message?: string }).message;
+    throw new Error(typeof msg === 'string' ? msg : 'LLM API 返回错误');
+  }
+  const choices = d.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return '';
+  const msg = (choices[0] as Record<string, unknown>)?.message;
+  if (!msg || typeof msg !== 'object') return '';
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text?: unknown }).text ?? '');
+        }
+        return '';
+      })
+      .join('');
+  }
+  return '';
+}
+
+/** OpenAI 兼容的 /v1/chat/completions 接口（DeepSeek、通义、本地 Ollama 等多数可填同一格式） */
 export async function generateReport(topic: string, profile: UserProfile) {
+  const apiUrl = getEnv('LLM_API_URL').trim();
+  const model = getEnv('LLM_MODEL').trim();
+  const apiKey = getEnv('LLM_API_KEY').trim();
+
+  if (!apiUrl || !model || !apiKey) {
+    throw new Error(
+      '请在环境变量中配置 LLM_API_URL、LLM_MODEL、LLM_API_KEY（例如写入 .env.local）'
+    );
+  }
+
   const prompt = `
 用户输入的选题/想法：
 ${topic}
@@ -89,16 +133,45 @@ ${topic}
 姓名：${profile.name || '[姓名]'}
 
 请严格按照系统指令中的 Workflow 和 Format Rules 生成内容。
+
+输出时必须依次包含三个独立板块，并使用与范例完全一致的标记行「${MARK_REVIEW}」「${MARK_FINAL}」「${MARK_FOLLOW}」，板块之间用单独一行的 --- 分隔；不得将三块混写为一段。
 `;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
-    contents: prompt,
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+  const res = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_INSTRUCTION },
+        { role: 'user', content: prompt },
+      ],
       temperature: 0.7,
-    }
+    }),
   });
 
-  return response.text;
+  const text = await res.text();
+  let data: unknown;
+  try {
+    data = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`LLM 响应非 JSON（HTTP ${res.status}）`);
+  }
+
+  if (!res.ok) {
+    const errMsg =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error?: { message?: string } }).error?.message || res.statusText)
+        : text.slice(0, 200);
+    throw new Error(`LLM 请求失败 (${res.status}): ${errMsg}`);
+  }
+
+  const out = extractAssistantText(data);
+  if (!out) {
+    throw new Error('LLM 未返回有效正文，请检查模型与接口是否兼容 OpenAI Chat Completions 格式');
+  }
+  return out;
 }
