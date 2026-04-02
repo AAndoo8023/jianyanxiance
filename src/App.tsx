@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   generateFollowUpSuggestions,
   generateReport,
@@ -85,6 +85,19 @@ type AutosizeTextareaProps = Omit<
   'rows'
 > & { minHeightPx?: number };
 
+/** 迭代同步高度：单次 height=scrollHeight 后换行重排仍可能增高，需多轮直至稳定 */
+function syncTextareaHeight(el: HTMLTextAreaElement, minPx: number): void {
+  el.style.height = 'auto';
+  let h = Math.max(el.scrollHeight, minPx);
+  for (let i = 0; i < 12; i++) {
+    el.style.height = `${h}px`;
+    const need = Math.max(el.scrollHeight, minPx);
+    if (need <= h + 1) return;
+    h = need;
+  }
+  el.style.height = `${Math.max(el.scrollHeight, minPx)}px`;
+}
+
 function AutosizeTextarea({
   value,
   minHeightPx = 48,
@@ -92,12 +105,30 @@ function AutosizeTextarea({
   ...rest
 }: AutosizeTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const sync = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    syncTextareaHeight(el, minHeightPx);
+  }, [minHeightPx]);
+
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(el.scrollHeight, minHeightPx)}px`;
+    syncTextareaHeight(el, minHeightPx);
   }, [value, minHeightPx]);
+
+  useEffect(() => {
+    const onResize = () => {
+      sync();
+    };
+    window.addEventListener('resize', onResize);
+    const fonts = document.fonts;
+    if (fonts && typeof fonts.ready?.then === 'function') {
+      fonts.ready.then(() => sync());
+    }
+    return () => window.removeEventListener('resize', onResize);
+  }, [sync]);
+
   return (
     <textarea
       ref={ref}
@@ -300,6 +331,9 @@ export default function App() {
                       </span>
                     </h2>
                   </div>
+                  <p className="mt-3 sm:mt-4 max-w-2xl mx-auto text-[11px] sm:text-xs text-slate-600 leading-relaxed text-pretty px-2">
+                    反映社情民意信息是民主党派参政议政中经常性、基础性的工作，是参政履职的重要抓手。
+                  </p>
                 </div>
 
                 <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 max-w-4xl lg:max-w-5xl mx-auto w-full">
@@ -618,7 +652,7 @@ export default function App() {
 
                 {reportState.kind === 'parsed' ? (
                   <div className="flex flex-col gap-5 lg:gap-6">
-                    <section className="overflow-hidden rounded-2xl border border-red-200/90 bg-white shadow-lg shadow-red-100/30 flex flex-col">
+                    <section className="rounded-2xl border border-red-200/90 bg-white shadow-lg shadow-red-100/30 flex flex-col overflow-x-hidden">
                       <div className="flex items-center gap-2 border-b border-red-100 bg-gradient-to-r from-red-50 to-white px-4 py-3 sm:px-5">
                         <FileSignature className="size-5 shrink-0 text-red-700" />
                         <h3 className="text-sm sm:text-base font-bold text-slate-900">最终定稿</h3>
@@ -660,7 +694,7 @@ export default function App() {
                       />
                     </section>
 
-                    <section className="overflow-hidden rounded-2xl border border-sky-200/80 bg-gradient-to-b from-sky-50/40 to-white shadow-md shadow-sky-100/30 flex flex-col">
+                    <section className="rounded-2xl border border-sky-200/80 bg-gradient-to-b from-sky-50/40 to-white shadow-md shadow-sky-100/30 flex flex-col overflow-x-hidden">
                       <div className="flex items-center justify-between gap-2 border-b border-sky-200/60 bg-sky-100/40 px-4 py-3 sm:px-5">
                         <div className="flex items-center gap-2 min-w-0">
                           <Sparkles className="size-5 shrink-0 text-sky-800" />
@@ -702,7 +736,7 @@ export default function App() {
                     <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       未识别到标准分区标记，已以全文展示。您仍可编辑后复制。
                     </p>
-                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col shadow-sm">
+                    <div className="rounded-xl border border-slate-200 bg-white overflow-x-hidden flex flex-col shadow-sm">
                       <div className="flex items-center border-b border-slate-100 px-4 py-2 bg-slate-50">
                         <span className="text-sm font-medium text-slate-800">全文</span>
                       </div>
