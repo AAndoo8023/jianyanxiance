@@ -165,10 +165,17 @@ export default function App() {
                 className="max-w-3xl mx-auto w-full flex flex-col gap-6 sm:gap-8"
               >
                 <div className="text-center px-1 pt-2 sm:pt-4">
-                  <p className="text-xs sm:text-sm font-medium text-red-700/90 tracking-wide">欢迎</p>
-                  <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight text-pretty">
-                    用 AI 辅助撰写社情民意信息
-                  </h2>
+                  <div className="flex justify-center">
+                    <h2 className="relative inline-block text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight text-pretty pr-7 sm:pr-8">
+                      勤勉履职，建言有方
+                      <span
+                        className="absolute right-0 top-0 inline-flex items-center rounded bg-red-600 px-[5px] py-[2px] text-[9px] sm:text-[10px] font-bold leading-none text-white shadow-sm"
+                        aria-hidden
+                      >
+                        AI
+                      </span>
+                    </h2>
+                  </div>
                   <p className="mt-3 text-sm sm:text-base text-slate-600 max-w-xl mx-auto leading-relaxed text-pretty">
                     请先了解下方流程与撰写要点，准备好选题后再进入「撰写需求」填写内容。
                   </p>
