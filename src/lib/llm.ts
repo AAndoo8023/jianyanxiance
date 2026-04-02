@@ -77,8 +77,13 @@ export interface UserProfile {
   name: string;
 }
 
-function getEnv(name: 'LLM_API_URL' | 'LLM_MODEL' | 'LLM_API_KEY'): string {
-  return (typeof process !== 'undefined' && process.env?.[name]) || '';
+/** 必须使用字面量 process.env.LLM_*，Vite define 才能在构建期静态替换为字符串（勿先判断 process，否则浏览器中会误走空值分支） */
+function getLlmEnv(): { apiUrl: string; model: string; apiKey: string } {
+  return {
+    apiUrl: process.env.LLM_API_URL || '',
+    model: process.env.LLM_MODEL || '',
+    apiKey: process.env.LLM_API_KEY || '',
+  };
 }
 
 function extractAssistantText(data: unknown): string {
@@ -111,9 +116,10 @@ function extractAssistantText(data: unknown): string {
 
 /** OpenAI 兼容的 /v1/chat/completions 接口（DeepSeek、通义、本地 Ollama 等多数可填同一格式） */
 export async function generateReport(topic: string, profile: UserProfile) {
-  const apiUrl = getEnv('LLM_API_URL').trim();
-  const model = getEnv('LLM_MODEL').trim();
-  const apiKey = getEnv('LLM_API_KEY').trim();
+  const { apiUrl: rawUrl, model: rawModel, apiKey: rawKey } = getLlmEnv();
+  const apiUrl = rawUrl.trim();
+  const model = rawModel.trim();
+  const apiKey = rawKey.trim();
 
   if (!apiUrl || !model || !apiKey) {
     throw new Error(

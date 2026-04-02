@@ -226,7 +226,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setView('input')}
-                    className="w-full flex items-center justify-center gap-2 min-h-12 sm:min-h-14 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-base font-semibold shadow-md shadow-red-600/25 transition-all active:scale-[0.99]"
+                    className="w-full flex items-center justify-center gap-2 min-h-12 sm:min-h-14 lg:min-h-[3.5rem] rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-base lg:text-lg font-semibold shadow-md shadow-red-600/25 transition-all active:scale-[0.99]"
                   >
                     我要建言
                     <ChevronRight className="size-5 shrink-0" strokeWidth={2.5} />

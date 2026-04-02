@@ -14,6 +14,19 @@ export function countFinalDraftChars(finalDraft: string): number {
   return finalDraft.replace(/\s/g, '').length;
 }
 
+/**
+ * 去掉板块切片首尾可能出现的独立分隔行 `---`。
+ * 分隔符在原文中位于两板块之间，对上一段而言在切片末尾，对下一段在开头；
+ * 仅用 `^...---` 无法去掉段尾的 `---`。
+ */
+function trimInterBlockSeparators(raw: string): string {
+  return raw
+    .replace(/^\s*[\r\n]*---\s*[\r\n]*/s, '')
+    .replace(/[\r\n]+\s*---\s*$/s, '')
+    .replace(/\s*---\s*$/s, '')
+    .trim();
+}
+
 export function parseReport(text: string): { ok: true; sections: ParsedReport } | { ok: false; raw: string } {
   const idxFinal = text.indexOf(MARK_FINAL);
   const idxFollow = text.indexOf(MARK_FOLLOW);
@@ -26,23 +39,17 @@ export function parseReport(text: string): { ok: true; sections: ParsedReport } 
 
   let review = '';
   if (idxReview >= 0 && idxReview < idxFinal) {
-    review = text
-      .slice(idxReview + MARK_REVIEW.length, idxFinal)
-      .replace(/^\s*\n?---\s*\n?/s, '')
-      .trim();
+    review = trimInterBlockSeparators(text.slice(idxReview + MARK_REVIEW.length, idxFinal));
   }
 
   let finalDraft: string;
   let followUp = '';
 
   if (idxFollow !== -1 && idxFollow > idxFinal) {
-    finalDraft = text
-      .slice(idxFinal + MARK_FINAL.length, idxFollow)
-      .replace(/^\s*\n?---\s*\n?/s, '')
-      .trim();
-    followUp = text.slice(idxFollow + MARK_FOLLOW.length).trim();
+    finalDraft = trimInterBlockSeparators(text.slice(idxFinal + MARK_FINAL.length, idxFollow));
+    followUp = trimInterBlockSeparators(text.slice(idxFollow + MARK_FOLLOW.length));
   } else {
-    finalDraft = text.slice(idxFinal + MARK_FINAL.length).trim();
+    finalDraft = trimInterBlockSeparators(text.slice(idxFinal + MARK_FINAL.length));
   }
 
   return {
