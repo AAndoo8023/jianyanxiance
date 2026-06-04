@@ -319,7 +319,7 @@ export default function App() {
     'w-full min-h-[8rem] sm:min-h-[10rem] lg:min-h-[12rem] p-3 sm:p-4 lg:p-5 rounded-xl border border-slate-200 bg-[#fdfbf7] font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/15 resize-y';
 
   const sectionTextareaAutosizeClass =
-    'w-full p-3 sm:p-4 lg:p-5 border border-slate-200 bg-[#fdfbf7] font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/15 resize-none overflow-hidden';
+    'w-full p-3 sm:p-4 lg:p-5 border border-slate-200 bg-[#fdfbf7] font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/15 resize-y overflow-y-auto';
 
   return (
     <div className="min-h-[100dvh] min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-red-100 selection:text-red-900 flex flex-col overflow-x-hidden">
@@ -342,8 +342,8 @@ export default function App() {
       </header>
 
       <main
-        className={`flex-1 flex flex-col min-h-0 w-full max-w-5xl xl:max-w-6xl 2xl:max-w-[90rem] mx-auto px-4 sm:px-8 xl:px-12 py-4 sm:py-6 lg:py-8 bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100/90 ${
-          view === 'welcome' ? 'relative overflow-hidden' : ''
+        className={`flex-1 flex flex-col min-h-0 overflow-y-auto w-full max-w-5xl xl:max-w-6xl 2xl:max-w-[90rem] mx-auto px-4 sm:px-8 xl:px-12 py-4 sm:py-6 lg:py-8 bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100/90 ${
+          view === 'welcome' ? 'relative overflow-x-hidden' : ''
         }`}
       >
         {view === 'welcome' && (
@@ -798,7 +798,7 @@ export default function App() {
                         }
                         className={
                           sectionTextareaAutosizeClass +
-                          ' border-0 rounded-none min-h-[18rem] sm:min-h-[22rem] resize-y'
+                          ' border-0 rounded-none min-h-[18rem] sm:min-h-[22rem] max-h-[min(70vh,40rem)]'
                         }
                         spellCheck={false}
                         placeholder="报送人抬头后，先写 1～2 段核心建议提要，再分「一、现状；二、主要问题；三、针对性建议」展开…"
@@ -832,7 +832,7 @@ export default function App() {
                           onChange={(e) => updateParsedSection('followUp', e.target.value)}
                           className={
                             sectionTextareaAutosizeClass +
-                            ' border-0 rounded-none bg-white/70 min-h-[9rem] resize-y'
+                            ' border-0 rounded-none bg-white/70 min-h-[9rem] max-h-[min(50vh,28rem)]'
                           }
                           spellCheck={false}
                           placeholder="待核实数据、建议调研对象、需查证的政策、待补图表等。**主题** 可加粗。"
@@ -867,7 +867,7 @@ export default function App() {
                         }
                         className={
                           sectionTextareaAutosizeClass +
-                          ' border-0 rounded-none min-h-[16rem] resize-y'
+                          ' border-0 rounded-none min-h-[16rem] max-h-[min(70vh,40rem)]'
                         }
                         spellCheck={false}
                       />
