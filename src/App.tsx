@@ -355,8 +355,8 @@ export default function App() {
           />
         )}
         <div
-          className={`relative flex w-full flex-col ${
-            view === 'welcome' ? '' : 'min-h-0 flex-1'
+          className={`relative flex w-full flex-1 flex-col ${
+            view === 'welcome' ? '' : 'min-h-0'
           }`}
         >
           <AnimatePresence mode="wait">
@@ -366,7 +366,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
-                className="flex w-full flex-col justify-start gap-5 sm:gap-6 lg:gap-8 pt-1 sm:pt-2 lg:pt-4 pb-4 sm:pb-6"
+                className="flex w-full flex-1 flex-col justify-start gap-5 sm:gap-6 lg:gap-8 pt-1 sm:pt-2 lg:pt-4 pb-4 sm:pb-6"
               >
                 <div className="text-center px-1">
                   <div className="flex justify-center">
@@ -451,7 +451,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="pb-1 max-w-xl sm:max-w-2xl lg:max-w-none mx-auto w-full">
+                <div className="pb-1 max-w-xl sm:max-w-2xl lg:max-w-none mx-auto w-full mt-auto">
                   <button
                     type="button"
                     onClick={() => setView('input')}
