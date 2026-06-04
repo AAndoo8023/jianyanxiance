@@ -26,6 +26,7 @@
 | 倒金字塔 / 白菜炖肉 | `system-instruction.md` |
 | 800～2000 字、标题技巧 | `system-instruction.md` |
 | 常见误区（内容/表达/思维） | `system-instruction.md` |
+| 数据纪律、用语规范、终稿禁止项 | `system-instruction.md` |
 | 参考示例 | `system-instruction.md` |
 | 选题审核标准 | `topic-validation.md` |
 | 撰写人调研备忘视角 | `follow-up.md` |

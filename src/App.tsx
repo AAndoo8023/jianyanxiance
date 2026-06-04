@@ -394,7 +394,7 @@ export default function App() {
                     <div className="mt-3 space-y-2.5 text-xs sm:text-sm text-slate-600 leading-relaxed text-pretty">
                       <p>
                         <span className="font-medium text-slate-800">需要输入什么：</span>
-                        选题（不少于 20 个汉字，<strong className="text-slate-800">小切口、能驾驭</strong>写清具体现象与初步想法）与报送人信息（选填，用于生成标准抬头）。
+                        选题（不少于 20 个汉字，<strong className="text-slate-800">小切口、能驾驭</strong>，写清具体区域/现象/案例线索与初步想法；勿仅议论全国性模式）与报送人信息（选填，用于生成标准抬头）。
                       </p>
                       <p>
                         <span className="font-medium text-slate-800">后台如何工作：</span>
@@ -444,8 +444,8 @@ export default function App() {
                         <p className="mt-1 text-pretty">核心建议放最前，便于领导速览</p>
                       </div>
                       <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
-                        <p className="font-semibold text-slate-800">三大类型</p>
-                        <p className="mt-1 text-pretty">建议类 · 问题与监督类 · 时政类</p>
+                        <p className="font-semibold text-slate-800">可核实</p>
+                        <p className="mt-1 text-pretty">写清区域与案例线索；无来源数字不编造，图表进备忘</p>
                       </div>
                     </div>
                   </div>
@@ -487,7 +487,7 @@ export default function App() {
                       撰写需求
                     </h2>
                     <p className="text-sm lg:text-base text-slate-500 mt-1.5 text-pretty leading-relaxed">
-                      输入您的社会观察、行业洞察或民生诉求。建议从小切口切入，明确属于建议类、问题与监督类或时政类；AI 将按「问题—分析—建议」三段论完成撰写与评审。
+                      输入您的社会观察、行业洞察或民生诉求。请写清具体区域、现象或案例线索（可匿名），并标明信息类型；AI 将按三段论撰写，终稿不含无来源数据与编辑备忘，图表需求写入调研备忘。
                     </p>
                   </div>
 
@@ -507,13 +507,13 @@ export default function App() {
                       <textarea
                         required
                         rows={7}
-                        placeholder="请聚焦小切口描述：具体现象/区域/问题、您观察到了什么、初步建议方向。示例：某小区电动自行车飞线充电隐患，而非泛泛议论城市治理…"
+                        placeholder="请聚焦小切口：具体区域/现象/案例（可匿名）、您观察到了什么、初步建议方向。示例：某市引导基金投向某类生态关联项目，返投完成但产能未落地——而非仅议论「全国基金合作模式风险」…"
                         className="w-full min-h-[11rem] sm:min-h-0 px-3.5 sm:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-colors resize-y max-h-[50vh]"
                         value={topic}
                         onChange={(e) => setTopic(e.target.value)}
                       />
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        建议类、问题与监督类、时政类可在下方选填；未选则 AI 根据内容自行判断。
+                        建议类、问题与监督类、时政类可在下方选填。选题越具体（区域、案例、数据线索），终稿越可核实；未提供的精确数字 AI 不会编造。
                       </p>
                     </div>
 
@@ -807,7 +807,7 @@ export default function App() {
                           ' border-0 rounded-none min-h-[18rem] sm:min-h-[22rem] max-h-[min(70vh,40rem)]'
                         }
                         spellCheck={false}
-                        placeholder="报送人抬头后，先写 1～2 段核心建议提要，再分「一、现状；二、主要问题；三、针对性建议」展开…"
+                        placeholder="报送人抬头后，先写 1～2 段核心建议提要，再分「一、现状；二、成因与风险；三、针对性建议」展开…"
                       />
                     </section>
 
