@@ -345,7 +345,7 @@ export default function App() {
                     <div className="mt-3 space-y-2.5 text-xs sm:text-sm text-slate-600 leading-relaxed text-pretty">
                       <p>
                         <span className="font-medium text-slate-800">需要输入什么：</span>
-                        选题（不少于 20 个汉字，写清现象与初步想法）与报送人信息（选填，用于生成标准抬头）。
+                        选题（不少于 20 个汉字，**小切口**写清具体现象与初步想法）与报送人信息（选填，用于生成标准抬头）。
                       </p>
                       <p>
                         <span className="font-medium text-slate-800">后台如何工作：</span>
@@ -365,7 +365,8 @@ export default function App() {
                     <div className="mt-3 space-y-2.5 text-xs sm:text-sm text-slate-600 leading-relaxed text-pretty">
                       <p>
                         选题须<strong className="text-slate-800">不少于 20 个汉字</strong>
-                        ，内容请严肃、务实、与建言场景相符；明显不当或无法讨论的选题将无法继续。
+                        ，宜<strong className="text-slate-800">小切口、力所能及</strong>
+                        ，聚焦政府与社会共同关切的务实问题；明显不当、空泛过大或无法讨论的选题将无法继续。
                       </p>
                       <p>
                         <strong className="text-slate-800">本平台不保存</strong>
@@ -417,7 +418,7 @@ export default function App() {
                       撰写需求
                     </h2>
                     <p className="text-sm lg:text-base text-slate-500 mt-1.5 text-pretty leading-relaxed">
-                      输入您的社会观察、行业洞察或民生诉求，AI 将先完成拆解与第一稿，再经三轮专家评审与修订，输出最终稿与后续建议。
+                      输入您的社会观察、行业洞察或民生诉求。建议从小切口切入（具体区域、现象或行业点），AI 将先完成拆解与第一稿，再经三轮专家评审与修订，输出最终稿与后续建议。
                     </p>
                   </div>
 
@@ -437,7 +438,7 @@ export default function App() {
                       <textarea
                         required
                         rows={7}
-                        placeholder="请详细描述您观察到的社会现象、存在的问题以及初步的建议。描述越具体，生成越精准…"
+                        placeholder="请从小切口描述：具体现象/区域/问题是什么、您观察到了什么、初步建议方向。越具体越精准（如：某小区交通事故频发，而非泛泛谈交通安全）…"
                         className="w-full min-h-[11rem] sm:min-h-0 px-3.5 sm:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-colors resize-y max-h-[50vh]"
                         value={topic}
                         onChange={(e) => setTopic(e.target.value)}
