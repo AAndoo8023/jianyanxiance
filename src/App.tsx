@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   generateFollowUpSuggestions,
   generateReport,
@@ -6,6 +6,7 @@ import {
   UserProfile,
   validateTopic,
 } from './lib/llm';
+import { INFO_TYPE_OPTIONS, type InfoType } from './lib/prompts';
 import {
   FileText,
   Send,
@@ -30,6 +31,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   computeThinkingPhaseFromBuffer,
   countChineseChars,
+  countFinalDraftChars,
   mergeFinalDraftTitleBody,
   parseReport,
   ParsedReport,
@@ -40,12 +42,12 @@ type ViewState = 'welcome' | 'input' | 'thinking' | 'result';
 
 const THINKING_STEPS = [
   {
-    title: '问题拆解与思考',
-    detail: '定性、因果、利害与必要的调研说明',
+    title: '选题研判与问题拆解',
+    detail: '聚焦实际、量力而行、小切口；明确信息类型（建议/监督/时政）',
   },
   {
     title: '撰写第一稿',
-    detail: '生成结构完整、可独立阅读的第一版正文',
+    detail: '问题—分析—建议三段论，倒金字塔呈现核心建议',
   },
   {
     title: '三轮专家评审',
@@ -53,15 +55,15 @@ const THINKING_STEPS = [
   },
   {
     title: '修订说明',
-    detail: '对照第一稿与专家意见的修改要点',
+    detail: '对照第一稿与专家意见，规避常见误区',
   },
   {
     title: '最终定稿',
-    detail: '修订后的正式《社情民意信息》全文',
+    detail: '800～2000 字，标题开门见山，精华靠前',
   },
   {
     title: '后续建议（深度维度）',
-    detail: '基于终稿从重要性、立意、调研与深化方向等提炼建议',
+    detail: '从时效性、政策衔接、调研核实等维度深化',
   },
 ] as const;
 
@@ -85,17 +87,12 @@ type AutosizeTextareaProps = Omit<
   'rows'
 > & { minHeightPx?: number };
 
-/** 迭代同步高度：单次 height=scrollHeight 后换行重排仍可能增高，需多轮直至稳定 */
+/** 迭代同步高度：避免先置 auto 造成可见塌陷闪烁 */
 function syncTextareaHeight(el: HTMLTextAreaElement, minPx: number): void {
-  el.style.height = 'auto';
-  let h = Math.max(el.scrollHeight, minPx);
-  for (let i = 0; i < 12; i++) {
-    el.style.height = `${h}px`;
-    const need = Math.max(el.scrollHeight, minPx);
-    if (need <= h + 1) return;
-    h = need;
-  }
-  el.style.height = `${Math.max(el.scrollHeight, minPx)}px`;
+  el.style.height = `${Math.max(el.offsetHeight, minPx)}px`;
+  const need = Math.max(el.scrollHeight, minPx);
+  if (Math.abs(el.offsetHeight - need) <= 1) return;
+  el.style.height = `${need}px`;
 }
 
 function AutosizeTextarea({
@@ -105,11 +102,7 @@ function AutosizeTextarea({
   ...rest
 }: AutosizeTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const sync = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    syncTextareaHeight(el, minHeightPx);
-  }, [minHeightPx]);
+  const fontsSyncedRef = useRef(false);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -118,16 +111,15 @@ function AutosizeTextarea({
   }, [value, minHeightPx]);
 
   useEffect(() => {
-    const onResize = () => {
-      sync();
-    };
-    window.addEventListener('resize', onResize);
+    const el = ref.current;
+    if (!el || fontsSyncedRef.current) return;
     const fonts = document.fonts;
-    if (fonts && typeof fonts.ready?.then === 'function') {
-      fonts.ready.then(() => sync());
-    }
-    return () => window.removeEventListener('resize', onResize);
-  }, [sync]);
+    if (!fonts || typeof fonts.ready?.then !== 'function') return;
+    fontsSyncedRef.current = true;
+    fonts.ready.then(() => {
+      if (ref.current) syncTextareaHeight(ref.current, minHeightPx);
+    });
+  }, [minHeightPx]);
 
   return (
     <textarea
@@ -141,7 +133,13 @@ function AutosizeTextarea({
 }
 
 type ReportState =
-  | { kind: 'parsed'; sections: ParsedReport }
+  | {
+      kind: 'parsed';
+      sections: ParsedReport;
+      finalDraftTitle: string | null;
+      finalDraftBody: string;
+      followUpLoading: boolean;
+    }
   | { kind: 'raw'; text: string };
 
 export default function App() {
@@ -155,20 +153,23 @@ export default function App() {
     name: '',
   });
   const [topic, setTopic] = useState('');
+  const [infoType, setInfoType] = useState<InfoType>('');
   const [reportState, setReportState] = useState<ReportState | null>(null);
   const [copied, setCopied] = useState(false);
   const [resultGenId, setResultGenId] = useState(0);
   const [followUpEditing, setFollowUpEditing] = useState(false);
-
-  const finalDraftParts = useMemo(() => {
-    if (!reportState || reportState.kind !== 'parsed') {
-      return { title: null as string | null, body: '' };
-    }
-    return splitFinalDraftTitleBody(reportState.sections.finalDraft);
-  }, [reportState]);
+  const thinkingPhaseRef = useRef(0);
+  const streamPhaseRafRef = useRef(0);
 
   const topicChineseCount = useMemo(() => countChineseChars(topic), [topic]);
   const topicValidLength = topicChineseCount >= 20;
+
+  const finalDraftCharCount = useMemo(() => {
+    if (!reportState || reportState.kind !== 'parsed') return 0;
+    return countFinalDraftChars(reportState.sections.finalDraft);
+  }, [reportState]);
+
+  const finalDraftLengthOk = finalDraftCharCount >= 800 && finalDraftCharCount <= 2000;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,23 +192,41 @@ export default function App() {
 
     setView('thinking');
     setThinkingPhase(0);
+    thinkingPhaseRef.current = 0;
     setReportState(null);
+
+    const scheduleThinkingPhase = (phase: number) => {
+      if (phase <= thinkingPhaseRef.current) return;
+      thinkingPhaseRef.current = phase;
+      if (streamPhaseRafRef.current) return;
+      streamPhaseRafRef.current = requestAnimationFrame(() => {
+        streamPhaseRafRef.current = 0;
+        setThinkingPhase(thinkingPhaseRef.current);
+      });
+    };
 
     let res: string;
     try {
       res = await generateReportStream(topic, profile, (buf) => {
-        setThinkingPhase(computeThinkingPhaseFromBuffer(buf));
-      });
+        scheduleThinkingPhase(computeThinkingPhaseFromBuffer(buf));
+      }, infoType);
     } catch (streamErr) {
       console.warn(streamErr);
       try {
-        res = await generateReport(topic, profile);
-        setThinkingPhase(4);
+        res = await generateReport(topic, profile, infoType);
+        scheduleThinkingPhase(4);
       } catch {
+        if (streamPhaseRafRef.current) cancelAnimationFrame(streamPhaseRafRef.current);
+        streamPhaseRafRef.current = 0;
         alert('生成失败，请重试。若长期失败，请确认模型接口支持流式（stream）或改用兼容 OpenAI 的网关。');
         setView('input');
         return;
       }
+    }
+
+    if (streamPhaseRafRef.current) {
+      cancelAnimationFrame(streamPhaseRafRef.current);
+      streamPhaseRafRef.current = 0;
     }
 
     const parsed = parseReport(res || '');
@@ -218,21 +237,36 @@ export default function App() {
       return;
     }
 
-    setThinkingPhase(5);
-    let follow = '';
-    try {
-      follow = await generateFollowUpSuggestions(parsed.sections.finalDraft);
-    } catch (e) {
-      console.error(e);
-      alert('主文已生成，但「后续建议」二次生成失败，您可在结果页手动补充。');
-    }
-
+    const { title, body } = splitFinalDraftTitleBody(parsed.sections.finalDraft);
+    const genId = resultGenId + 1;
     setReportState({
       kind: 'parsed',
-      sections: { ...parsed.sections, followUp: follow },
+      sections: { ...parsed.sections, followUp: '' },
+      finalDraftTitle: title,
+      finalDraftBody: body,
+      followUpLoading: true,
     });
     setView('result');
-    setResultGenId((n) => n + 1);
+    setResultGenId(genId);
+
+    try {
+      const follow = await generateFollowUpSuggestions(parsed.sections.finalDraft);
+      setReportState((prev) => {
+        if (!prev || prev.kind !== 'parsed') return prev;
+        return {
+          ...prev,
+          sections: { ...prev.sections, followUp: follow },
+          followUpLoading: false,
+        };
+      });
+    } catch (e) {
+      console.error(e);
+      setReportState((prev) => {
+        if (!prev || prev.kind !== 'parsed') return prev;
+        return { ...prev, followUpLoading: false };
+      });
+      alert('主文已生成，但「后续建议」二次生成失败，您可在结果页手动补充。');
+    }
   };
 
   useEffect(() => {
@@ -247,11 +281,26 @@ export default function App() {
     return reportState.text.trim();
   };
 
+  const updateFinalDraft = (title: string | null, body: string) => {
+    setReportState((prev) => {
+      if (!prev || prev.kind !== 'parsed') return prev;
+      return {
+        ...prev,
+        finalDraftTitle: title,
+        finalDraftBody: body,
+        sections: {
+          ...prev.sections,
+          finalDraft: mergeFinalDraftTitleBody(title, body),
+        },
+      };
+    });
+  };
+
   const updateParsedSection = (key: keyof ParsedReport, value: string) => {
     setReportState((prev) => {
       if (!prev || prev.kind !== 'parsed') return prev;
       return {
-        kind: 'parsed',
+        ...prev,
         sections: { ...prev.sections, [key]: value },
       };
     });
@@ -345,15 +394,15 @@ export default function App() {
                     <div className="mt-3 space-y-2.5 text-xs sm:text-sm text-slate-600 leading-relaxed text-pretty">
                       <p>
                         <span className="font-medium text-slate-800">需要输入什么：</span>
-                        选题（不少于 20 个汉字，**小切口**写清具体现象与初步想法）与报送人信息（选填，用于生成标准抬头）。
+                        选题（不少于 20 个汉字，<strong className="text-slate-800">小切口、能驾驭</strong>写清具体现象与初步想法）与报送人信息（选填，用于生成标准抬头）。
                       </p>
                       <p>
                         <span className="font-medium text-slate-800">后台如何工作：</span>
-                        提交后先判断选题是否适合继续；通过后由 AI 在后台完成拆解、多轮打磨与定稿，「正在生成」页会提示大致进度。
+                        提交后先审核选题；通过后按「问题—分析—建议」三段论完成拆解、评审与定稿。
                       </p>
                       <p>
                         <span className="font-medium text-slate-800">给出什么结果：</span>
-                        可编辑的「最终定稿」与「后续建议」两栏；「复制正文」仅复制终稿全文。
+                        可编辑的「最终定稿」（800～2000 字，精华靠前）与「后续建议」；「复制正文」仅复制终稿全文。
                       </p>
                     </div>
                   </div>
@@ -365,8 +414,8 @@ export default function App() {
                     <div className="mt-3 space-y-2.5 text-xs sm:text-sm text-slate-600 leading-relaxed text-pretty">
                       <p>
                         选题须<strong className="text-slate-800">不少于 20 个汉字</strong>
-                        ，宜<strong className="text-slate-800">小切口、力所能及</strong>
-                        ，聚焦政府与社会共同关切的务实问题；明显不当、空泛过大或无法讨论的选题将无法继续。
+                        ，须<strong className="text-slate-800">聚焦实际、量力而行、小切口深挖掘</strong>
+                        ；选题决定价值，空泛过大或力所不及将无法继续。
                       </p>
                       <p>
                         <strong className="text-slate-800">本平台不保存</strong>
@@ -378,6 +427,26 @@ export default function App() {
                       <p className="text-slate-700">
                         勤勉履职，建言有方。欢迎通过页脚联系方式交流使用感受与改进建议。
                       </p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 lg:p-6 shadow-md shadow-slate-200/60 sm:col-span-2">
+                    <div className="flex items-center gap-2 text-red-700 font-medium text-sm sm:text-base">
+                      <Sparkles className="size-4 shrink-0" />
+                      撰写要诀
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs sm:text-sm text-slate-600 leading-relaxed">
+                      <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
+                        <p className="font-semibold text-slate-800">三段论</p>
+                        <p className="mt-1 text-pretty">问题 → 分析 → 建议，逻辑清晰</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
+                        <p className="font-semibold text-slate-800">倒金字塔</p>
+                        <p className="mt-1 text-pretty">核心建议放最前，便于领导速览</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
+                        <p className="font-semibold text-slate-800">三大类型</p>
+                        <p className="mt-1 text-pretty">建议类 · 问题与监督类 · 时政类</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -418,7 +487,7 @@ export default function App() {
                       撰写需求
                     </h2>
                     <p className="text-sm lg:text-base text-slate-500 mt-1.5 text-pretty leading-relaxed">
-                      输入您的社会观察、行业洞察或民生诉求。建议从小切口切入（具体区域、现象或行业点），AI 将先完成拆解与第一稿，再经三轮专家评审与修订，输出最终稿与后续建议。
+                      输入您的社会观察、行业洞察或民生诉求。建议从小切口切入，明确属于建议类、问题与监督类或时政类；AI 将按「问题—分析—建议」三段论完成撰写与评审。
                     </p>
                   </div>
 
@@ -438,11 +507,46 @@ export default function App() {
                       <textarea
                         required
                         rows={7}
-                        placeholder="请从小切口描述：具体现象/区域/问题是什么、您观察到了什么、初步建议方向。越具体越精准（如：某小区交通事故频发，而非泛泛谈交通安全）…"
+                        placeholder="请聚焦小切口描述：具体现象/区域/问题、您观察到了什么、初步建议方向。示例：某小区电动自行车飞线充电隐患，而非泛泛议论城市治理…"
                         className="w-full min-h-[11rem] sm:min-h-0 px-3.5 sm:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-colors resize-y max-h-[50vh]"
                         value={topic}
                         onChange={(e) => setTopic(e.target.value)}
                       />
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        建议类、问题与监督类、时政类可在下方选填；未选则 AI 根据内容自行判断。
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <p className="text-sm font-medium text-slate-900">
+                        信息类型
+                        <span className="text-slate-400 font-normal text-xs ml-1">（选填）</span>
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {INFO_TYPE_OPTIONS.map((opt) => {
+                          const selected = infoType === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              title={opt.hint}
+                              onClick={() => setInfoType(selected ? '' : opt.value)}
+                              className={`rounded-xl border px-3 py-2 text-sm transition-colors ${
+                                selected
+                                  ? 'border-red-400 bg-red-50 text-red-800 font-medium ring-2 ring-red-200/60'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {infoType ? (
+                        <p className="text-xs text-slate-500">
+                          {INFO_TYPE_OPTIONS.find((o) => o.value === infoType)?.hint}
+                        </p>
+                      ) : null}
                     </div>
 
                     <hr className="border-slate-100" />
@@ -537,23 +641,23 @@ export default function App() {
             {view === 'thinking' && (
               <motion.div
                 key="thinking"
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.02 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 className="mx-auto flex w-full max-w-3xl xl:max-w-4xl flex-col justify-center px-3 sm:px-6 py-10 sm:py-14 min-h-[min(88vh,46rem)]"
               >
                 <div className="relative mx-auto mb-10 h-24 w-24 shrink-0 sm:mb-12 sm:h-28 sm:w-28">
                   <div className="absolute inset-0 rounded-full border-[5px] border-red-100" />
                   <div className="h-24 w-24 animate-spin rounded-full border-[5px] border-red-600 border-t-transparent sm:h-28 sm:w-28" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <Sparkles className="size-9 text-red-600 animate-pulse sm:size-10" />
+                    <Sparkles className="size-9 text-red-600 sm:size-10" />
                   </div>
                 </div>
 
                 <div className="mb-6 sm:mb-8 text-center">
                   <p className="text-base sm:text-lg font-semibold text-slate-900">正在生成，请稍候</p>
                   <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-lg mx-auto leading-relaxed">
-                    下方高亮为当前阶段；主文生成完成后将自动进行第二轮「后续建议」撰写。
+                    下方高亮为当前阶段；主文完成后将先展示定稿，后续建议稍后填入。
                   </p>
                 </div>
 
@@ -563,13 +667,13 @@ export default function App() {
                     aria-hidden
                   />
                   <div className="space-y-4 sm:space-y-5">
-                    {THINKING_STEPS.map((step, i) => {
+                    {THINKING_STEPS.slice(0, 5).map((step, i) => {
                       const active = thinkingPhase === i;
                       const done = thinkingPhase > i;
                       return (
                         <div
                           key={step.title}
-                          className={`relative flex gap-4 sm:gap-5 rounded-2xl border p-4 sm:p-5 transition-all ${
+                          className={`relative flex gap-4 sm:gap-5 rounded-2xl border p-4 sm:p-5 min-h-[5.5rem] sm:min-h-[6rem] ${
                             active
                               ? 'border-red-300 bg-gradient-to-br from-red-50/90 to-white shadow-md shadow-red-100/80 ring-2 ring-red-200/60'
                               : done
@@ -593,17 +697,17 @@ export default function App() {
                             <div className="mt-1.5 text-xs sm:text-sm text-slate-600 leading-relaxed">
                               {step.detail}
                             </div>
-                            {active && (
-                              <p className="mt-3 inline-flex items-center rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
-                                进行中
-                              </p>
-                            )}
-                            {done && !active && (
-                              <p className="mt-3 text-xs font-medium text-emerald-700">已完成</p>
-                            )}
-                            {!done && !active && (
-                              <p className="mt-3 text-xs text-slate-400">待开始</p>
-                            )}
+                            <p
+                              className={`mt-3 h-5 text-xs leading-5 ${
+                                active
+                                  ? 'font-semibold text-red-600'
+                                  : done
+                                    ? 'font-medium text-emerald-700'
+                                    : 'text-slate-400'
+                              }`}
+                            >
+                              {active ? '进行中' : done ? '已完成' : '待开始'}
+                            </p>
                           </div>
                         </div>
                       );
@@ -615,10 +719,10 @@ export default function App() {
 
             {view === 'result' && reportState && (
               <motion.div
-                key="result"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
+                key={`result-${resultGenId}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 className="w-full flex flex-col gap-3 sm:gap-4 lg:gap-6"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between shrink-0">
@@ -654,9 +758,25 @@ export default function App() {
                 {reportState.kind === 'parsed' ? (
                   <div className="flex flex-col gap-5 lg:gap-6">
                     <section className="rounded-2xl border border-red-200/90 bg-white shadow-lg shadow-red-100/30 flex flex-col overflow-x-hidden">
-                      <div className="flex items-center gap-2 border-b border-red-100 bg-gradient-to-r from-red-50 to-white px-4 py-3 sm:px-5">
-                        <FileSignature className="size-5 shrink-0 text-red-700" />
-                        <h3 className="text-sm sm:text-base font-bold text-slate-900">最终定稿</h3>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100 bg-gradient-to-r from-red-50 to-white px-4 py-3 sm:px-5">
+                        <div className="flex items-center gap-2">
+                          <FileSignature className="size-5 shrink-0 text-red-700" />
+                          <h3 className="text-sm sm:text-base font-bold text-slate-900">最终定稿</h3>
+                        </div>
+                        {reportState.kind === 'parsed' && finalDraftCharCount > 0 && (
+                          <span
+                            className={`text-xs tabular-nums px-2 py-0.5 rounded-full ring-1 ${
+                              finalDraftLengthOk
+                                ? 'text-emerald-700 bg-emerald-50 ring-emerald-200'
+                                : finalDraftCharCount < 800
+                                  ? 'text-amber-700 bg-amber-50 ring-amber-200'
+                                  : 'text-orange-700 bg-orange-50 ring-orange-200'
+                            }`}
+                          >
+                            {finalDraftCharCount} 字
+                            {finalDraftLengthOk ? '（符合 800～2000 字）' : '（建议 800～2000 字）'}
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-4 sm:px-5">
                         <label htmlFor="final-draft-title" className="sr-only">
@@ -664,34 +784,28 @@ export default function App() {
                         </label>
                         <AutosizeTextarea
                           id="final-draft-title"
-                          value={finalDraftParts.title ?? ''}
+                          value={reportState.finalDraftTitle ?? ''}
                           minHeightPx={52}
                           onChange={(e) =>
-                            updateParsedSection(
-                              'finalDraft',
-                              mergeFinalDraftTitleBody(
-                                e.target.value.trim() === '' ? null : e.target.value,
-                                finalDraftParts.body
-                              )
+                            updateFinalDraft(
+                              e.target.value.trim() === '' ? null : e.target.value,
+                              reportState.finalDraftBody
                             )
                           }
-                          placeholder="关于××××××的建议"
+                          placeholder="如：远洋社区交通事故频发，亟待重视"
                           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg sm:text-xl font-bold tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 whitespace-normal break-words leading-snug"
                           spellCheck={false}
                         />
                       </div>
                       <AutosizeTextarea
-                        value={finalDraftParts.body}
+                        value={reportState.finalDraftBody}
                         minHeightPx={128}
                         onChange={(e) =>
-                          updateParsedSection(
-                            'finalDraft',
-                            mergeFinalDraftTitleBody(finalDraftParts.title, e.target.value)
-                          )
+                          updateFinalDraft(reportState.finalDraftTitle, e.target.value)
                         }
                         className={sectionTextareaAutosizeClass + ' border-0 rounded-none'}
                         spellCheck={false}
-                        placeholder="报送人抬头与正文（请勿再写标题行）"
+                        placeholder="报送人抬头后，先写 1～2 段核心建议提要，再分「一、现状；二、主要问题；三、针对性建议」展开…"
                       />
                     </section>
 
@@ -710,7 +824,12 @@ export default function App() {
                           {followUpEditing ? '完成' : '编辑'}
                         </button>
                       </div>
-                      {followUpEditing ? (
+                      {reportState.followUpLoading ? (
+                        <div className="flex items-center gap-3 px-4 py-6 sm:px-5 font-serif text-sm text-slate-500 bg-white/70 min-h-[6rem]">
+                          <Loader2 className="size-5 shrink-0 animate-spin text-sky-600" />
+                          正在生成后续建议…
+                        </div>
+                      ) : followUpEditing ? (
                         <AutosizeTextarea
                           value={reportState.sections.followUp}
                           minHeightPx={112}

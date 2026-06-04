@@ -21,6 +21,15 @@ export interface UserProfile {
   name: string;
 }
 
+/** 社情民意信息三大类型（选填） */
+export type InfoType = '' | '建议类' | '问题与监督类' | '时政类';
+
+export const INFO_TYPE_OPTIONS: { value: InfoType; label: string; hint: string }[] = [
+  { value: '建议类', label: '建议类', hint: '针对具体问题提出解决方案' },
+  { value: '问题与监督类', label: '问题与监督类', hint: '反映苗头性问题进行预警' },
+  { value: '时政类', label: '时政类', hint: '就重大时事或热点表态反思' },
+];
+
 const MARK_VARS = {
   MARK_ANALYSIS,
   MARK_FIRST_DRAFT,
@@ -50,10 +59,15 @@ export function getFollowUpSystem(): string {
 }
 
 /** 主报告 User Prompt */
-export function buildUserReportPrompt(topic: string, profile: UserProfile): string {
+export function buildUserReportPrompt(
+  topic: string,
+  profile: UserProfile,
+  infoType: InfoType = ''
+): string {
   return fillTemplate(userReportTemplateRaw.trim(), {
     ...MARK_VARS,
     TOPIC: topic,
+    INFO_TYPE: infoType || '未指定（请根据选题内容自行判断）',
     PARTY: profile.party || '[党派/组织身份]',
     TITLE: profile.title || '[职业身份/头衔]',
     PHONE: profile.phone || '[手机号码]',

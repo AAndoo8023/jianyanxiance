@@ -5,10 +5,11 @@ import {
   getFollowUpSystem,
   getSystemInstruction,
   getTopicValidationSystem,
+  type InfoType,
   type UserProfile,
 } from './prompts';
 
-export type { UserProfile };
+export type { InfoType, UserProfile };
 
 function getLlmEnv(): { apiUrl: string; model: string; apiKey: string } {
   return {
@@ -179,10 +180,11 @@ function parseSseLineForDelta(line: string): string {
 export async function generateReportStream(
   topic: string,
   profile: UserProfile,
-  onBuffer: (fullText: string) => void
+  onBuffer: (fullText: string) => void,
+  infoType: InfoType = ''
 ): Promise<string> {
   const { apiUrl, model, apiKey } = requireLlmEnv();
-  const prompt = buildUserReportPrompt(topic, profile);
+  const prompt = buildUserReportPrompt(topic, profile, infoType);
 
   const res = await chatCompletion(
     apiUrl,
@@ -245,9 +247,13 @@ export async function generateReportStream(
 }
 
 /** 非流式回退（部分兼容接口不支持 stream） */
-export async function generateReport(topic: string, profile: UserProfile): Promise<string> {
+export async function generateReport(
+  topic: string,
+  profile: UserProfile,
+  infoType: InfoType = ''
+): Promise<string> {
   const { apiUrl, model, apiKey } = requireLlmEnv();
-  const prompt = buildUserReportPrompt(topic, profile);
+  const prompt = buildUserReportPrompt(topic, profile, infoType);
 
   const res = await chatCompletion(
     apiUrl,
