@@ -342,8 +342,10 @@ export default function App() {
       </header>
 
       <main
-        className={`flex-1 flex flex-col min-h-0 overflow-y-auto w-full max-w-5xl xl:max-w-6xl 2xl:max-w-[90rem] mx-auto px-4 sm:px-8 xl:px-12 py-4 sm:py-6 lg:py-8 bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100/90 ${
-          view === 'welcome' ? 'relative overflow-x-hidden' : ''
+        className={`flex-1 flex flex-col w-full max-w-5xl xl:max-w-6xl 2xl:max-w-[90rem] mx-auto px-4 sm:px-8 xl:px-12 py-4 sm:py-6 lg:py-8 bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100/90 ${
+          view === 'welcome'
+            ? 'relative overflow-x-hidden'
+            : 'min-h-0 overflow-y-auto'
         }`}
       >
         {view === 'welcome' && (
@@ -352,7 +354,11 @@ export default function App() {
             aria-hidden
           />
         )}
-        <div className="relative flex min-h-0 w-full flex-1 flex-col">
+        <div
+          className={`relative flex w-full flex-col ${
+            view === 'welcome' ? '' : 'min-h-0 flex-1'
+          }`}
+        >
           <AnimatePresence mode="wait">
             {view === 'welcome' && (
               <motion.div
@@ -360,7 +366,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
-                className="flex w-full flex-1 flex-col justify-start gap-6 sm:gap-8 lg:gap-10 pt-2 sm:pt-4 lg:pt-6 pb-6 sm:pb-8"
+                className="flex w-full flex-col justify-start gap-5 sm:gap-6 lg:gap-8 pt-1 sm:pt-2 lg:pt-4 pb-4 sm:pb-6"
               >
                 <div className="text-center px-1">
                   <div className="flex justify-center">
