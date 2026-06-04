@@ -53,7 +53,7 @@ export function getTopicValidationSystem(): string {
   return topicValidationRaw.trim();
 }
 
-/** 后续建议 System Prompt */
+/** 后续建议 System Prompt（撰写人调研备忘） */
 export function getFollowUpSystem(): string {
   return followUpRaw.trim();
 }
@@ -83,7 +83,7 @@ export function buildTopicValidationUserPrompt(topic: string): string {
   });
 }
 
-/** 后续建议 User Prompt */
+/** 撰写人调研备忘 User Prompt */
 export function buildFollowUpUserPrompt(finalDraft: string): string {
   return fillTemplate(followUpUserRaw.trim(), {
     FINAL_DRAFT: finalDraft.slice(0, 12000),

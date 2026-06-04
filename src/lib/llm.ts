@@ -126,7 +126,7 @@ export async function validateTopic(topic: string): Promise<boolean> {
   return false;
 }
 
-/** 根据终稿生成「后续建议」（第二轮，非形式维度） */
+/** 根据终稿生成「撰写人调研备忘」（第二轮） */
 export async function generateFollowUpSuggestions(finalDraft: string): Promise<string> {
   const { apiUrl, model, apiKey } = requireLlmEnv();
 
@@ -147,12 +147,12 @@ export async function generateFollowUpSuggestions(finalDraft: string): Promise<s
       data && typeof data === 'object' && 'error' in data
         ? String((data as { error?: { message?: string } }).error?.message || res.statusText)
         : '';
-    throw new Error(errMsg || `后续建议生成失败 (${res.status})`);
+    throw new Error(errMsg || `调研备忘生成失败 (${res.status})`);
   }
 
   const out = extractAssistantText(data);
   if (!out.trim()) {
-    throw new Error('后续建议未返回有效内容');
+    throw new Error('调研备忘未返回有效内容');
   }
   return out.trim();
 }

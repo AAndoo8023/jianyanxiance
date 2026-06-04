@@ -12,8 +12,8 @@
 | `user-report.template.md` | 主报告 User Prompt 模板 | 生成报告 |
 | `topic-validation.md` | 选题审核 System Prompt | 用户提交选题后 |
 | `topic-validation-user.template.md` | 选题审核 User Prompt 模板 | 用户提交选题后 |
-| `follow-up.md` | 后续建议 System Prompt | 主报告完成后第二轮调用 |
-| `follow-up-user.template.md` | 后续建议 User Prompt 模板 | 主报告完成后 |
+| `follow-up.md` | 撰写人调研备忘 System Prompt | 主报告完成后第二轮调用 |
+| `follow-up-user.template.md` | 调研备忘 User Prompt 模板 | 主报告完成后 |
 
 ## 方法论索引（proposal-writing 技能）
 
@@ -28,7 +28,7 @@
 | 常见误区（内容/表达/思维） | `system-instruction.md` |
 | 参考示例 | `system-instruction.md` |
 | 选题审核标准 | `topic-validation.md` |
-| 后续深化建议视角 | `follow-up.md` |
+| 撰写人调研备忘视角 | `follow-up.md` |
 
 ## 占位符
 
@@ -43,5 +43,5 @@
 
 1. **改撰写逻辑**：编辑 `system-instruction.md`（与 proposal-writing 技能保持同步）
 2. **改选题标准**：编辑 `topic-validation.md`
-3. **改后续建议**：编辑 `follow-up.md`
+3. **改调研备忘**：编辑 `follow-up.md`
 4. **改单次请求上下文**：编辑对应的 `*.template.md`

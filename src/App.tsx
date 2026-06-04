@@ -62,12 +62,12 @@ const THINKING_STEPS = [
     detail: '800～2000 字，标题开门见山，精华靠前',
   },
   {
-    title: '后续建议（深度维度）',
-    detail: '从时效性、政策衔接、调研核实等维度深化',
+    title: '调研与核实备忘',
+    detail: '提示撰写人待查数据、待访对象与待补材料（不随稿报送）',
   },
 ] as const;
 
-/** 将 `**短语**` 渲染为加粗（用于后续建议阅读视图） */
+/** 将 `**短语**` 渲染为加粗（用于调研备忘阅读视图） */
 function renderSimpleBold(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
@@ -265,7 +265,7 @@ export default function App() {
         if (!prev || prev.kind !== 'parsed') return prev;
         return { ...prev, followUpLoading: false };
       });
-      alert('主文已生成，但「后续建议」二次生成失败，您可在结果页手动补充。');
+      alert('主文已生成，但「调研备忘」生成失败，您可在结果页自行补充。');
     }
   };
 
@@ -402,7 +402,7 @@ export default function App() {
                       </p>
                       <p>
                         <span className="font-medium text-slate-800">给出什么结果：</span>
-                        可编辑的「最终定稿」（800～2000 字，精华靠前）与「后续建议」；「复制正文」仅复制终稿全文。
+                        可编辑的「最终定稿」（800～2000 字）与「调研备忘」（供您补调研，不随稿报送）；「复制正文」仅复制终稿。
                       </p>
                     </div>
                   </div>
@@ -657,7 +657,7 @@ export default function App() {
                 <div className="mb-6 sm:mb-8 text-center">
                   <p className="text-base sm:text-lg font-semibold text-slate-900">正在生成，请稍候</p>
                   <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-lg mx-auto leading-relaxed">
-                    下方高亮为当前阶段；主文完成后将先展示定稿，后续建议稍后填入。
+                    下方高亮为当前阶段；主文完成后将先展示定稿，调研备忘稍后填入。
                   </p>
                 </div>
 
@@ -809,16 +809,22 @@ export default function App() {
                       />
                     </section>
 
-                    <section className="rounded-2xl border border-sky-200/80 bg-gradient-to-b from-sky-50/40 to-white shadow-md shadow-sky-100/30 flex flex-col overflow-x-hidden">
-                      <div className="flex items-center justify-between gap-2 border-b border-sky-200/60 bg-sky-100/40 px-4 py-3 sm:px-5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Sparkles className="size-5 shrink-0 text-sky-800" />
-                          <h3 className="text-sm sm:text-base font-bold text-sky-950">后续建议</h3>
+                    <section className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/30 to-white shadow-md shadow-amber-100/25 flex flex-col overflow-x-hidden">
+                      <div className="flex items-center justify-between gap-2 border-b border-amber-200/60 bg-amber-100/35 px-4 py-3 sm:px-5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <ClipboardList className="size-5 shrink-0 text-amber-800" />
+                            <h3 className="text-sm sm:text-base font-bold text-amber-950">调研与核实备忘</h3>
+                          </div>
+                          <p className="mt-1 text-[11px] sm:text-xs text-amber-800/80 leading-relaxed">
+                            供撰写人报送前自行调研补材，不写入正文、不随稿报送
+                          </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setFollowUpEditing((v) => !v)}
-                          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-sky-300/80 bg-white/90 px-3 py-1.5 text-xs font-medium text-sky-900 hover:bg-white"
+                          disabled={reportState.followUpLoading}
+                          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-amber-300/80 bg-white/90 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-white disabled:opacity-50"
                         >
                           <Edit3 size={14} className="shrink-0" />
                           {followUpEditing ? '完成' : '编辑'}
@@ -826,8 +832,8 @@ export default function App() {
                       </div>
                       {reportState.followUpLoading ? (
                         <div className="flex items-center gap-3 px-4 py-6 sm:px-5 font-serif text-sm text-slate-500 bg-white/70 min-h-[6rem]">
-                          <Loader2 className="size-5 shrink-0 animate-spin text-sky-600" />
-                          正在生成后续建议…
+                          <Loader2 className="size-5 shrink-0 animate-spin text-amber-600" />
+                          正在生成调研备忘…
                         </div>
                       ) : followUpEditing ? (
                         <AutosizeTextarea
@@ -836,7 +842,7 @@ export default function App() {
                           onChange={(e) => updateParsedSection('followUp', e.target.value)}
                           className={sectionTextareaAutosizeClass + ' border-0 rounded-none bg-white/70'}
                           spellCheck={false}
-                          placeholder="由第二轮 AI 根据终稿生成；可在此编辑。**视角** 可加粗。"
+                          placeholder="待核实数据、建议调研对象、需查证的政策、待补图表等。**主题** 可加粗。"
                         />
                       ) : (
                         <div className="px-4 py-4 sm:px-5 sm:py-5 font-serif text-[15px] sm:text-base lg:text-[1.0625rem] leading-relaxed text-slate-800 bg-white/70 min-h-[6rem] whitespace-pre-wrap break-words">
@@ -844,7 +850,7 @@ export default function App() {
                             renderSimpleBold(reportState.sections.followUp)
                           ) : (
                             <span className="text-slate-400">
-                              暂无内容；若第二轮生成失败，可点「编辑」自行填写。
+                              暂无内容；若生成失败，可点「编辑」自行记录待调研事项。
                             </span>
                           )}
                         </div>
