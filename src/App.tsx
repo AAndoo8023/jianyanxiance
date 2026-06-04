@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   generateFollowUpSuggestions,
   generateReport,
@@ -67,6 +67,41 @@ const THINKING_STEPS = [
   },
 ] as const;
 
+const THINKING_LIVE_STATUS = [
+  '正在研判选题与问题定性…',
+  '正在撰写第一稿正文…',
+  '正在进行三轮专家评审…',
+  '正在整理修订说明…',
+  '正在输出最终定稿…',
+  '正在生成调研与核实备忘…',
+] as const;
+
+type ProcessingOverlayState = { title: string; detail: string };
+
+/** 全屏毛玻璃「思考中」提示 */
+function ProcessingOverlay({ title, detail }: ProcessingOverlayState) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/25 backdrop-blur-md"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="w-full max-w-sm rounded-2xl border border-white/70 bg-white/80 backdrop-blur-xl shadow-2xl shadow-slate-900/10 px-6 py-8 text-center">
+        <div className="relative mx-auto h-14 w-14">
+          <div className="absolute inset-0 rounded-full border-[3px] border-red-100" />
+          <div className="absolute inset-0 animate-spin rounded-full border-[3px] border-red-600 border-t-transparent" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Sparkles className="size-6 text-red-600" />
+          </div>
+        </div>
+        <p className="mt-5 text-lg font-semibold text-slate-900 tracking-tight">{title}</p>
+        <p className="mt-2 text-sm text-slate-600 leading-relaxed text-pretty">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 /** 将 `**短语**` 渲染为加粗（用于调研备忘阅读视图） */
 function renderSimpleBold(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -82,63 +117,12 @@ function renderSimpleBold(text: string): React.ReactNode {
   });
 }
 
-type AutosizeTextareaProps = Omit<
-  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
-  'rows'
-> & { minHeightPx?: number };
-
-/** 迭代同步高度：避免先置 auto 造成可见塌陷闪烁 */
-function syncTextareaHeight(el: HTMLTextAreaElement, minPx: number): void {
-  el.style.height = `${Math.max(el.offsetHeight, minPx)}px`;
-  const need = Math.max(el.scrollHeight, minPx);
-  if (Math.abs(el.offsetHeight - need) <= 1) return;
-  el.style.height = `${need}px`;
-}
-
-function AutosizeTextarea({
-  value,
-  minHeightPx = 48,
-  className,
-  ...rest
-}: AutosizeTextareaProps) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const fontsSyncedRef = useRef(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    syncTextareaHeight(el, minHeightPx);
-  }, [value, minHeightPx]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || fontsSyncedRef.current) return;
-    const fonts = document.fonts;
-    if (!fonts || typeof fonts.ready?.then !== 'function') return;
-    fontsSyncedRef.current = true;
-    fonts.ready.then(() => {
-      if (ref.current) syncTextareaHeight(ref.current, minHeightPx);
-    });
-  }, [minHeightPx]);
-
-  return (
-    <textarea
-      ref={ref}
-      rows={1}
-      value={value}
-      className={className}
-      {...rest}
-    />
-  );
-}
-
 type ReportState =
   | {
       kind: 'parsed';
       sections: ParsedReport;
       finalDraftTitle: string | null;
       finalDraftBody: string;
-      followUpLoading: boolean;
     }
   | { kind: 'raw'; text: string };
 
@@ -158,6 +142,8 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [resultGenId, setResultGenId] = useState(0);
   const [followUpEditing, setFollowUpEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [processingOverlay, setProcessingOverlay] = useState<ProcessingOverlayState | null>(null);
   const thinkingPhaseRef = useRef(0);
   const streamPhaseRafRef = useRef(0);
 
@@ -179,93 +165,101 @@ export default function App() {
       return;
     }
 
+    setIsSubmitting(true);
+    setProcessingOverlay({
+      title: '思考中',
+      detail: '正在审核选题：聚焦实际、小切口、量力而行…',
+    });
+
     try {
-      const ok = await validateTopic(topic);
-      if (!ok) {
-        alert('您的想法和选题还需要慎重考虑');
-        return;
-      }
-    } catch {
-      alert('选题审核失败，请稍后重试或检查网络与接口配置。');
-      return;
-    }
-
-    setView('thinking');
-    setThinkingPhase(0);
-    thinkingPhaseRef.current = 0;
-    setReportState(null);
-
-    const scheduleThinkingPhase = (phase: number) => {
-      if (phase <= thinkingPhaseRef.current) return;
-      thinkingPhaseRef.current = phase;
-      if (streamPhaseRafRef.current) return;
-      streamPhaseRafRef.current = requestAnimationFrame(() => {
-        streamPhaseRafRef.current = 0;
-        setThinkingPhase(thinkingPhaseRef.current);
-      });
-    };
-
-    let res: string;
-    try {
-      res = await generateReportStream(topic, profile, (buf) => {
-        scheduleThinkingPhase(computeThinkingPhaseFromBuffer(buf));
-      }, infoType);
-    } catch (streamErr) {
-      console.warn(streamErr);
       try {
-        res = await generateReport(topic, profile, infoType);
-        scheduleThinkingPhase(4);
+        const ok = await validateTopic(topic);
+        if (!ok) {
+          alert('您的想法和选题还需要慎重考虑');
+          return;
+        }
       } catch {
-        if (streamPhaseRafRef.current) cancelAnimationFrame(streamPhaseRafRef.current);
-        streamPhaseRafRef.current = 0;
-        alert('生成失败，请重试。若长期失败，请确认模型接口支持流式（stream）或改用兼容 OpenAI 的网关。');
-        setView('input');
+        alert('选题审核失败，请稍后重试或检查网络与接口配置。');
         return;
       }
-    }
 
-    if (streamPhaseRafRef.current) {
-      cancelAnimationFrame(streamPhaseRafRef.current);
-      streamPhaseRafRef.current = 0;
-    }
+      setProcessingOverlay({
+        title: '思考中',
+        detail: '选题审核通过，正在启动 AI 撰写流程…',
+      });
 
-    const parsed = parseReport(res || '');
-    if (!parsed.ok) {
-      setReportState({ kind: 'raw', text: res || '' });
+      setView('thinking');
+      setThinkingPhase(0);
+      thinkingPhaseRef.current = 0;
+      setReportState(null);
+      setProcessingOverlay(null);
+
+      const scheduleThinkingPhase = (phase: number) => {
+        if (phase <= thinkingPhaseRef.current) return;
+        thinkingPhaseRef.current = phase;
+        if (streamPhaseRafRef.current) return;
+        streamPhaseRafRef.current = requestAnimationFrame(() => {
+          streamPhaseRafRef.current = 0;
+          setThinkingPhase(thinkingPhaseRef.current);
+        });
+      };
+
+      let res: string;
+      try {
+        res = await generateReportStream(topic, profile, (buf) => {
+          scheduleThinkingPhase(computeThinkingPhaseFromBuffer(buf));
+        }, infoType);
+      } catch (streamErr) {
+        console.warn(streamErr);
+        try {
+          res = await generateReport(topic, profile, infoType);
+          scheduleThinkingPhase(4);
+        } catch {
+          if (streamPhaseRafRef.current) cancelAnimationFrame(streamPhaseRafRef.current);
+          streamPhaseRafRef.current = 0;
+          alert('生成失败，请重试。若长期失败，请确认模型接口支持流式（stream）或改用兼容 OpenAI 的网关。');
+          setView('input');
+          return;
+        }
+      }
+
+      if (streamPhaseRafRef.current) {
+        cancelAnimationFrame(streamPhaseRafRef.current);
+        streamPhaseRafRef.current = 0;
+      }
+
+      const parsed = parseReport(res || '');
+      if (!parsed.ok) {
+        setReportState({ kind: 'raw', text: res || '' });
+        setView('result');
+        setResultGenId((n) => n + 1);
+        return;
+      }
+
+      const { title, body } = splitFinalDraftTitleBody(parsed.sections.finalDraft);
+
+      setThinkingPhase(5);
+      thinkingPhaseRef.current = 5;
+
+      let follow = '';
+      try {
+        follow = await generateFollowUpSuggestions(parsed.sections.finalDraft);
+      } catch (e) {
+        console.error(e);
+        alert('主文已生成，但「调研备忘」生成失败，您可在结果页自行补充。');
+      }
+
+      setReportState({
+        kind: 'parsed',
+        sections: { ...parsed.sections, followUp: follow },
+        finalDraftTitle: title,
+        finalDraftBody: body,
+      });
       setView('result');
       setResultGenId((n) => n + 1);
-      return;
-    }
-
-    const { title, body } = splitFinalDraftTitleBody(parsed.sections.finalDraft);
-    const genId = resultGenId + 1;
-    setReportState({
-      kind: 'parsed',
-      sections: { ...parsed.sections, followUp: '' },
-      finalDraftTitle: title,
-      finalDraftBody: body,
-      followUpLoading: true,
-    });
-    setView('result');
-    setResultGenId(genId);
-
-    try {
-      const follow = await generateFollowUpSuggestions(parsed.sections.finalDraft);
-      setReportState((prev) => {
-        if (!prev || prev.kind !== 'parsed') return prev;
-        return {
-          ...prev,
-          sections: { ...prev.sections, followUp: follow },
-          followUpLoading: false,
-        };
-      });
-    } catch (e) {
-      console.error(e);
-      setReportState((prev) => {
-        if (!prev || prev.kind !== 'parsed') return prev;
-        return { ...prev, followUpLoading: false };
-      });
-      alert('主文已生成，但「调研备忘」生成失败，您可在结果页自行补充。');
+    } finally {
+      setProcessingOverlay(null);
+      setIsSubmitting(false);
     }
   };
 
@@ -627,11 +621,15 @@ export default function App() {
 
                     <button
                       type="submit"
-                      disabled={!topic.trim() || !topicValidLength}
+                      disabled={!topic.trim() || !topicValidLength || isSubmitting}
                       className="w-full flex items-center justify-center gap-2 min-h-12 sm:min-h-[3.25rem] bg-red-600 hover:bg-red-700 active:bg-red-800 text-white py-3 px-4 rounded-xl text-base font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] shadow-sm shadow-red-600/20"
                     >
-                      <Send size={18} className="shrink-0" />
-                      生成信息内容
+                      {isSubmitting ? (
+                        <Loader2 size={18} className="shrink-0 animate-spin" />
+                      ) : (
+                        <Send size={18} className="shrink-0" />
+                      )}
+                      {isSubmitting ? '思考中…' : '生成信息内容'}
                     </button>
                   </form>
                 </div>
@@ -646,28 +644,23 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 className="mx-auto flex w-full max-w-3xl xl:max-w-4xl flex-col justify-center px-3 sm:px-6 py-10 sm:py-14 min-h-[min(88vh,46rem)]"
               >
-                <div className="relative mx-auto mb-10 h-24 w-24 shrink-0 sm:mb-12 sm:h-28 sm:w-28">
-                  <div className="absolute inset-0 rounded-full border-[5px] border-red-100" />
-                  <div className="h-24 w-24 animate-spin rounded-full border-[5px] border-red-600 border-t-transparent sm:h-28 sm:w-28" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Sparkles className="size-9 text-red-600 sm:size-10" />
-                  </div>
-                </div>
-
-                <div className="mb-6 sm:mb-8 text-center">
-                  <p className="text-base sm:text-lg font-semibold text-slate-900">正在生成，请稍候</p>
-                  <p className="mt-2 text-sm sm:text-base text-slate-500 max-w-lg mx-auto leading-relaxed">
-                    下方高亮为当前阶段；主文完成后将先展示定稿，调研备忘稍后填入。
+                <div className="mb-6 sm:mb-8 rounded-2xl border border-white/70 bg-white/75 backdrop-blur-xl px-4 py-4 sm:px-6 sm:py-5 text-center shadow-lg shadow-slate-200/40">
+                  <p className="text-base sm:text-lg font-semibold text-slate-900">思考中</p>
+                  <p className="mt-2 text-sm sm:text-base text-red-700 font-medium max-w-lg mx-auto leading-relaxed">
+                    {THINKING_LIVE_STATUS[Math.min(thinkingPhase, 5)]}
+                  </p>
+                  <p className="mt-2 text-xs sm:text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
+                    全部完成后将一次性展示终稿与调研备忘
                   </p>
                 </div>
 
-                <div className="relative rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-8 lg:p-10 shadow-xl shadow-slate-200/40">
+                <div className="relative rounded-3xl border border-slate-200/90 bg-white/90 backdrop-blur-sm p-5 sm:p-8 lg:p-10 shadow-xl shadow-slate-200/40">
                   <div
                     className="pointer-events-none absolute left-[2.125rem] top-14 bottom-14 w-px bg-gradient-to-b from-slate-200 via-red-200/60 to-slate-200 sm:left-[2.375rem]"
                     aria-hidden
                   />
                   <div className="space-y-4 sm:space-y-5">
-                    {THINKING_STEPS.slice(0, 5).map((step, i) => {
+                    {THINKING_STEPS.map((step, i) => {
                       const active = thinkingPhase === i;
                       const done = thinkingPhase > i;
                       return (
@@ -778,14 +771,14 @@ export default function App() {
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-4 sm:px-5">
-                        <label htmlFor="final-draft-title" className="sr-only">
-                          标题
-                        </label>
-                        <AutosizeTextarea
+                      <div className="shrink-0 border-b border-red-100/80 bg-gradient-to-b from-red-50/80 to-white px-4 py-5 sm:px-6 sm:py-6">
+                        <p className="text-[11px] sm:text-xs font-medium text-red-700/90 text-center tracking-wide mb-2">
+                          标　题
+                        </p>
+                        <input
                           id="final-draft-title"
+                          type="text"
                           value={reportState.finalDraftTitle ?? ''}
-                          minHeightPx={52}
                           onChange={(e) =>
                             updateFinalDraft(
                               e.target.value.trim() === '' ? null : e.target.value,
@@ -793,17 +786,20 @@ export default function App() {
                             )
                           }
                           placeholder="如：远洋社区交通事故频发，亟待重视"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg sm:text-xl font-bold tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 whitespace-normal break-words leading-snug"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg sm:text-xl font-bold tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 leading-snug"
                           spellCheck={false}
                         />
                       </div>
-                      <AutosizeTextarea
+                      <textarea
                         value={reportState.finalDraftBody}
-                        minHeightPx={128}
+                        rows={18}
                         onChange={(e) =>
                           updateFinalDraft(reportState.finalDraftTitle, e.target.value)
                         }
-                        className={sectionTextareaAutosizeClass + ' border-0 rounded-none'}
+                        className={
+                          sectionTextareaAutosizeClass +
+                          ' border-0 rounded-none min-h-[18rem] sm:min-h-[22rem] resize-y'
+                        }
                         spellCheck={false}
                         placeholder="报送人抬头后，先写 1～2 段核心建议提要，再分「一、现状；二、主要问题；三、针对性建议」展开…"
                       />
@@ -823,24 +819,21 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setFollowUpEditing((v) => !v)}
-                          disabled={reportState.followUpLoading}
-                          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-amber-300/80 bg-white/90 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-white disabled:opacity-50"
+                          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-amber-300/80 bg-white/90 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-white"
                         >
                           <Edit3 size={14} className="shrink-0" />
                           {followUpEditing ? '完成' : '编辑'}
                         </button>
                       </div>
-                      {reportState.followUpLoading ? (
-                        <div className="flex items-center gap-3 px-4 py-6 sm:px-5 font-serif text-sm text-slate-500 bg-white/70 min-h-[6rem]">
-                          <Loader2 className="size-5 shrink-0 animate-spin text-amber-600" />
-                          正在生成调研备忘…
-                        </div>
-                      ) : followUpEditing ? (
-                        <AutosizeTextarea
+                      {followUpEditing ? (
+                        <textarea
                           value={reportState.sections.followUp}
-                          minHeightPx={112}
+                          rows={8}
                           onChange={(e) => updateParsedSection('followUp', e.target.value)}
-                          className={sectionTextareaAutosizeClass + ' border-0 rounded-none bg-white/70'}
+                          className={
+                            sectionTextareaAutosizeClass +
+                            ' border-0 rounded-none bg-white/70 min-h-[9rem] resize-y'
+                          }
                           spellCheck={false}
                           placeholder="待核实数据、建议调研对象、需查证的政策、待补图表等。**主题** 可加粗。"
                         />
@@ -866,13 +859,16 @@ export default function App() {
                       <div className="flex items-center border-b border-slate-100 px-4 py-2 bg-slate-50">
                         <span className="text-sm font-medium text-slate-800">全文</span>
                       </div>
-                      <AutosizeTextarea
+                      <textarea
                         value={reportState.text}
-                        minHeightPx={160}
+                        rows={20}
                         onChange={(e) =>
                           setReportState({ kind: 'raw', text: e.target.value })
                         }
-                        className={sectionTextareaAutosizeClass + ' border-0 rounded-none'}
+                        className={
+                          sectionTextareaAutosizeClass +
+                          ' border-0 rounded-none min-h-[16rem] resize-y'
+                        }
                         spellCheck={false}
                       />
                     </div>
@@ -892,6 +888,10 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {processingOverlay ? (
+        <ProcessingOverlay title={processingOverlay.title} detail={processingOverlay.detail} />
+      ) : null}
     </div>
   );
 }

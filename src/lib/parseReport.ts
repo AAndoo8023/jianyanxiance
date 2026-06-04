@@ -84,8 +84,28 @@ function pickReviewMarker(text: string): string | null {
   return iNew < iOld ? MARK_REVIEW : LEGACY_MARK_REVIEW;
 }
 
+function isReporterHeaderLine(line: string): boolean {
+  const t = line.trim();
+  return /反映[：:]\s*$/.test(t) || /（联系电话/.test(t) || /联系电话[：:]/.test(t);
+}
+
+/** 判断首行是否像社情民意信息标题（含 skill 中开门见山式标题） */
+function looksLikeTitleLine(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length > 80) return false;
+  if (/^[（(]?[一二三四五六七八九十]+、/.test(t)) return false;
+  if (isReporterHeaderLine(t)) return false;
+  if (/^[\u3000\s]{2,}/.test(line)) return false;
+  if (/^关于/.test(t)) return true;
+  if (/(亟待|急需|亟需|整治|重视)/.test(t) && t.length <= 55) return true;
+  if (/的(困难与)?建议$/.test(t)) return true;
+  if (/^关于.+的(建议|提案|调查)/.test(t)) return true;
+  if (t.length <= 45 && !/[。；！？]$/.test(t) && !/^一、/.test(t)) return true;
+  return false;
+}
+
 /**
- * 从最终稿中分离标题（居中/首行）与正文，避免把 `<center>` 当纯文本展示。
+ * 从最终稿中分离标题（首行/居中）与正文，避免把 `<center>` 当纯文本展示。
  */
 export function splitFinalDraftTitleBody(finalDraft: string): { title: string | null; body: string } {
   const raw = finalDraft.trim();
@@ -96,22 +116,20 @@ export function splitFinalDraftTitleBody(finalDraft: string): { title: string | 
   }
   const lines = raw.split(/\r?\n/);
   const first = lines[0]?.trim() ?? '';
-  const looksLikeTitle =
-    first.length > 0 &&
-    first.length <= 120 &&
-    /^关于.+的(建议|提案)/.test(first);
 
-  // 仅一行且像标题：兼容旧版「正文清空后只存标题字符串」的存储形式
-  if (lines.length === 1 && looksLikeTitle) {
+  if (lines.length === 1 && looksLikeTitleLine(first)) {
     return { title: first, body: '' };
   }
 
-  if (looksLikeTitle && lines.length > 1) {
-    return {
-      title: first,
-      body: lines.slice(1).join('\n').trim(),
-    };
+  if (looksLikeTitleLine(first) && lines.length > 1) {
+    let body = lines.slice(1).join('\n').trim();
+    // 正文首行若重复标题则去掉
+    if (body.startsWith(first)) {
+      body = body.slice(first.length).replace(/^\s*\n+/, '').trim();
+    }
+    return { title: first, body };
   }
+
   return { title: null, body: raw };
 }
 
